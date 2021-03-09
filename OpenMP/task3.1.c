@@ -249,7 +249,7 @@ struct vector matrix_vector_mult_bp(struct matrix m, struct vector v)
         if (m.n < row_end) {
             row_end = m.n;
         }
-        unsigned col = collen * (block / cols);
+        unsigned col = collen * (block / rows);
         unsigned col_end = col + collen;
         if (m.m < col_end) {
             col_end = m.m;
@@ -331,6 +331,7 @@ int main(int argc, const char * argv[])
     free(mult_rp.el);
     free(mult_cp.el);
     free(mult_bp.el);
+    free(mult_cpt.el);
 
     return 0;
 }
