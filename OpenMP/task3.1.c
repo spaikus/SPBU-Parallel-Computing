@@ -230,7 +230,9 @@ struct vector matrix_vector_mult_bp(struct matrix m, struct vector v)
     struct vector res = matrix_vector_mult_prep(m, v);
 
     unsigned rowlen = m.n / thread_num;
+    if (!rowlen) { rowlen = 1; }
     unsigned collen = m.m / thread_num;
+    if (!collen) { collen = 1; }
     unsigned rows = (m.n + rowlen - 1) / rowlen;
     unsigned cols = (m.m + collen - 1) / collen;
     unsigned blocks = rows * cols;
