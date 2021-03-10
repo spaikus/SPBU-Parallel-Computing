@@ -5,9 +5,12 @@
 //xor-swap(a,b): a^b^b = a
 #define swap(a,b) a^=b;b^=a;a^=b
 
-unsigned thread_num = 8;
-
 #define numtype unsigned
+
+unsigned thread_num = 4;
+
+numtype *thread_vector;
+#pragma omp threadprivate(thread_vector)
 
 struct vector
 {
@@ -108,10 +111,8 @@ struct vector matrix_vector_mult_prep(struct matrix m, struct vector v)
     return res;
 }
 
-struct vector matrix_vector_mult(struct matrix m, struct vector v)
+void matrix_vector_mult(struct matrix m, struct vector v, struct vector res)
 {
-    struct vector res = matrix_vector_mult_prep(m, v);
-
     for (unsigned i = 0; i < m.n; ++i)
     {
         res.el[i] = 0;
@@ -119,14 +120,10 @@ struct vector matrix_vector_mult(struct matrix m, struct vector v)
             res.el[i] += m.el[i][j] * v.el[j];
         }
     }
-
-    return res;
 }
 
-struct vector matrix_vector_mult_rp(struct matrix m, struct vector v)
+void matrix_vector_mult_rp(struct matrix m, struct vector v, struct vector res)
 {
-    struct vector res = matrix_vector_mult_prep(m, v);
-
     #pragma omp parallel for
     for (unsigned i = 0; i < m.n; ++i)
     {
@@ -138,25 +135,49 @@ struct vector matrix_vector_mult_rp(struct matrix m, struct vector v)
         }
         res.el[i] = cumsum;
     }
-
-    return res;
 }
 
-numtype *cumsum_vector;
-#pragma omp threadprivate(cumsum_vector)
-struct vector matrix_vector_mult_cp(struct matrix m, struct vector v)
+void matrix_vector_mult_rpc(struct matrix m, struct vector v, struct vector res)
 {
-    struct vector res = matrix_vector_mult_prep(m, v);
+    //thread_vector used as copy of vector v
+    #pragma omp parallel
+    {
+        thread_vector = malloc(v.l * sizeof(numtype));
+        for (unsigned i = 0; i < v.l; ++i) {
+            thread_vector[i] = v.el[i];
+        }
+    }
 
+    #pragma omp parallel for
+    for (unsigned i = 0; i < m.n; ++i)
+    {
+        numtype *m_row = m.el[i];
+
+        numtype cumsum = 0;
+        for (unsigned j = 0; j < m.m; ++j) {
+            cumsum += m_row[j] * thread_vector[j];
+        }
+        res.el[i] = cumsum;
+    }
+
+    #pragma omp parallel
+    {
+        free(thread_vector);
+    }
+}
+
+void matrix_vector_mult_cp(struct matrix m, struct vector v, struct vector res)
+{
+    //thread_vector used as cumsum-vector for each thread
     #pragma omp parallel for
     for (unsigned i = 0; i < res.l; ++i) {
         res.el[i] = 0;
     }
     #pragma omp parallel
     {
-        cumsum_vector = malloc(res.l * sizeof(numtype));
+        thread_vector = malloc(res.l * sizeof(numtype));
         for (unsigned i = 0; i < res.l; ++i) {
-            cumsum_vector[i] = 0;
+            thread_vector[i] = 0;
         }
     }
 
@@ -167,7 +188,7 @@ struct vector matrix_vector_mult_cp(struct matrix m, struct vector v)
         // TODO: change matrix representation to array of cols (not array of rows)
 
         for (unsigned i = 0; i < m.n; ++i) {
-            cumsum_vector[i] += m.el[i][j] * v_el;
+            thread_vector[i] += m.el[i][j] * v_el;
         }
     }
 
@@ -175,29 +196,24 @@ struct vector matrix_vector_mult_cp(struct matrix m, struct vector v)
     {
         for (unsigned i = 0; i < res.l; ++i) {
             #pragma omp atomic
-            res.el[i] += cumsum_vector[i];
+            res.el[i] += thread_vector[i];
         }
-        free(cumsum_vector);
+        free(thread_vector);
     }
-
-    return res;
 }
 
-struct vector matrix_vector_mult_cpt(struct matrix mt, struct vector v)
+void matrix_vector_mult_cpt(struct matrix mt, struct vector v, struct vector res)
 {
-    swap(mt.n, mt.m);
-    struct vector res = matrix_vector_mult_prep(mt, v);
-    swap(mt.n, mt.m);
-
+    //thread_vector used as cumsum-vector for each thread
     #pragma omp parallel for
     for (unsigned i = 0; i < res.l; ++i) {
         res.el[i] = 0;
     }
     #pragma omp parallel
     {
-        cumsum_vector = malloc(res.l * sizeof(numtype));
+        thread_vector = malloc(res.l * sizeof(numtype));
         for (unsigned i = 0; i < res.l; ++i) {
-            cumsum_vector[i] = 0;
+            thread_vector[i] = 0;
         }
     }
 
@@ -208,7 +224,7 @@ struct vector matrix_vector_mult_cpt(struct matrix mt, struct vector v)
         numtype *m_col = mt.el[j];
 
         for (unsigned i = 0; i < mt.m; ++i) {
-            cumsum_vector[i] += m_col[i] * v_el;
+            thread_vector[i] += m_col[i] * v_el;
         }
     }
 
@@ -216,19 +232,15 @@ struct vector matrix_vector_mult_cpt(struct matrix mt, struct vector v)
     {
         for (unsigned i = 0; i < res.l; ++i) {
             #pragma omp atomic
-            res.el[i] += cumsum_vector[i];
+            res.el[i] += thread_vector[i];
         }
-        free(cumsum_vector);
+        free(thread_vector);
     }
-
-    return res;
 }
 
 
-struct vector matrix_vector_mult_bp(struct matrix m, struct vector v)
+void matrix_vector_mult_bp(struct matrix m, struct vector v, struct vector res)
 {
-    struct vector res = matrix_vector_mult_prep(m, v);
-
     unsigned rowlen = m.n / thread_num;
     if (!rowlen) { rowlen = 1; }
     unsigned collen = m.m / thread_num;
@@ -266,8 +278,22 @@ struct vector matrix_vector_mult_bp(struct matrix m, struct vector v)
             res.el[row] += cumsum;
         }
     }
+}
 
-    return res;
+
+char are_vectors_equal(struct vector v1, struct vector v2)
+{
+    if (v1.l != v2.l) {
+        return 0;
+    }
+
+    for (unsigned i = 0; i < v1.l; ++i) 
+    {
+        if (v1.el[i] != v2.el[i]) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 
@@ -277,8 +303,9 @@ int main(int argc, const char * argv[])
      OpenMP task3.1:
      compute matrix-vector multiplication:
         rp - row parallel
+        rpc - row parallel (with vector copy)
         cp - column parallel
-        cpt - column parallel (with col matrix)
+        cpt - column parallel (with transposed matrix - col matrix)
         bp - block parallel
      */
 
@@ -294,44 +321,64 @@ int main(int argc, const char * argv[])
 
     double t1, t2;
 
+    struct vector true_mult = matrix_vector_mult_prep(m, v);
+    struct vector mult = matrix_vector_mult_prep(m, v);
+
     t1 = omp_get_wtime();
-    struct vector mult = matrix_vector_mult(m, v);
+    matrix_vector_mult(m, v, true_mult);
     t2 = omp_get_wtime();
     double mult_time = t2 - t1;
 
     t1 = omp_get_wtime();
-    struct vector mult_rp = matrix_vector_mult_rp(m, v);
+    matrix_vector_mult_rp(m, v, mult);
     t2 = omp_get_wtime();
     double mult_time_rp = t2 - t1;
+    if (!are_vectors_equal(true_mult, mult)) {
+        mult_time_rp = -1.;
+    }
+    
+    t1 = omp_get_wtime();
+    matrix_vector_mult_rpc(m, v, mult);
+    t2 = omp_get_wtime();
+    double mult_time_rpc = t2 - t1;
+    if (!are_vectors_equal(true_mult, mult)) {
+        mult_time_rpc = -1.;
+    }
 
     t1 = omp_get_wtime();
-    struct vector mult_cp = matrix_vector_mult_cp(m, v);
+    matrix_vector_mult_cp(m, v, mult);
     t2 = omp_get_wtime();
     double mult_time_cp = t2 - t1;
+    if (!are_vectors_equal(true_mult, mult)) {
+        mult_time_cp = -1.;
+    }
 
     t1 = omp_get_wtime();
-    struct vector mult_bp = matrix_vector_mult_bp(m, v);
+    matrix_vector_mult_bp(m, v, mult);
     t2 = omp_get_wtime();
     double mult_time_bp = t2 - t1;
+    if (!are_vectors_equal(true_mult, mult)) {
+        mult_time_bp = -1.;
+    }
 
     matrix_transpose(&m);
     t1 = omp_get_wtime();
-    struct vector mult_cpt = matrix_vector_mult_cpt(m, v);
+    matrix_vector_mult_cpt(m, v, mult);
     t2 = omp_get_wtime();
     double mult_time_cpt = t2 - t1;
+    if (!are_vectors_equal(true_mult, mult)) {
+        mult_time_cpt = -1.;
+    }
 
-    printf("TIME - seq: %f, rp: %f, cp: %f, cpt: %f, bp: %f\n",
-           mult_time, mult_time_rp, mult_time_cp, mult_time_cpt, mult_time_bp);
-    printf("SPEED-UP (opt: %d) - rp: %f, cp: %f, cpt: %f, bp: %f\n",
-           thread_num, mult_time/mult_time_rp, mult_time/mult_time_cp, mult_time/mult_time_cpt, mult_time/mult_time_bp);
+    printf("TIME - seq: %f, rp: %f, rpc: %f, cp: %f, cpt: %f, bp: %f\n",
+           mult_time, mult_time_rp, mult_time_rpc, mult_time_cp, mult_time_cpt, mult_time_bp);
+    printf("SPEED-UP (opt: %u) - rp: %f, rpc: %f, cp: %f, cpt: %f, bp: %f\n",
+           thread_num, mult_time/mult_time_rp, mult_time/mult_time_rpc, mult_time/mult_time_cp, mult_time/mult_time_cpt, mult_time/mult_time_bp);
 
     free_matrix(m);
     free(v.el);
+    free(true_mult.el);
     free(mult.el);
-    free(mult_rp.el);
-    free(mult_cp.el);
-    free(mult_bp.el);
-    free(mult_cpt.el);
 
     return 0;
 }
