@@ -255,6 +255,7 @@ int main(int argc, const char * argv[])
     free_matrix(m1);
     free_matrix(m2);
     free_matrix(mult);
+    free_matrix(mult);
 
 
     printf("TIME - seq: %f, sp: %f, bp: %f\n",
