@@ -258,7 +258,7 @@ struct vector matrix_vector_mult_bp(struct matrix m, struct vector v)
         for (; row < row_end; ++row) {
             numtype *m_row = m.el[row];
 
-            unsigned cumsum = 0;
+            numtype cumsum = 0;
             for (unsigned j = col; j < col_end; ++j) {
                 cumsum += m_row[j] * v.el[j];
             }
