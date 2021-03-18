@@ -30,7 +30,8 @@ hashtype hash_string(const unsigned char *str, size_t len)
     hashtype strhash = 0;
 
     const unsigned char *end = str + len;
-    while (str != end) {
+    while (str != end) 
+    {
         strhash = strhash * p + (hashtype)*str;
         ++str;
     }
@@ -53,7 +54,8 @@ void find_substr(
     hashtype subhash = hash_string((const unsigned char *)substr, sublen);
     hashtype strhash = hash_string((const unsigned char *)string, sublen);
 
-    for (size_t i = 0; i < indlen; ++i) {
+    for (size_t i = 0; i < indlen; ++i)
+    {
         if (subhash != strhash || strncmp(substr, string, sublen)) {
             *is_substr = 'n';
         } else {
@@ -84,12 +86,15 @@ void find_substr_p(
         if (indlen < rind) {
             rind = indlen;
         }
-        if (!(rind < lind)) {
+        
+        if (!(rind < lind)) 
+        {
             string += lind;
             is_substr += lind;
             hashtype strhash = hash_string((const unsigned char *)string, sublen);
 
-            while (lind < rind) {
+            while (lind < rind) 
+            {
                 if (subhash != strhash || strncmp(substr, string, sublen)) {
                     *is_substr = 'n';
                 } else {
