@@ -255,7 +255,8 @@ void matrix_vector_mult_bp(struct matrix m, struct vector v, struct vector res)
     }
 
     #pragma omp parallel for
-    for (unsigned block = 0; block < blocks; ++block) {
+    for (unsigned block = 0; block < blocks; ++block) 
+    {
         unsigned row = rowlen * (block % rows);
         unsigned row_end = row + rowlen;
         if (m.n < row_end) {
@@ -267,7 +268,8 @@ void matrix_vector_mult_bp(struct matrix m, struct vector v, struct vector res)
             col_end = m.m;
         }
 
-        for (; row < row_end; ++row) {
+        for (; row < row_end; ++row) 
+        {
             numtype *m_row = m.el[row];
 
             numtype cumsum = 0;
