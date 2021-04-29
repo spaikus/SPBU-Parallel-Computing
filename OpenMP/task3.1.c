@@ -30,7 +30,7 @@ void matrix_vector_mult_cpt(struct matrix m, struct vector v, struct vector res)
 void matrix_vector_mult_bp(struct matrix m, struct vector v, struct vector res);
 void matrix_transpose(struct matrix *m);
 
-unsigned num_threads = 4;
+unsigned num_threads = 8;
 numtype *thread_vector;
 #pragma omp threadprivate(thread_vector)
 
@@ -47,16 +47,17 @@ int main(int argc, const char * argv[])
      */
 
     int num_tests = 10;
-    int test_from = 500, test_to = 2500;
-    int test_step = 500;
+    int test_from = 200, test_to = 1400;
+    int test_step = 200;
     const char *out_file_name = "task3.1_res.txt";
     
-    omp_set_num_threads(4);
+    omp_set_num_threads(num_threads);
 
     FILE *output = fopen(out_file_name, "w");
     fprintf(output, 
-            "| Размер | Последовательный | Параллельный | Ускорение (4 потока) | Параллельный | Ускорение (8 потоков) |\n"
-            "| :---: | :---: | :---: | :---: | :---: | :---: |\n");
+            "Время в мкс, количество потоков: %d\n"
+            "| Размер | Послед. | Пар. (строки) | Пар. (столбцы) | Пар. (блоки) | Ускор. (строки) | Ускор. (столбцы) | Ускор. (блоки) |\n"
+            "| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n", num_threads);
 
     for (int test = test_from; test <= test_to; test += test_step)
     {
@@ -96,13 +97,13 @@ int main(int argc, const char * argv[])
             free(mult.el);
         }
         
-        ts /= num_tests;
-        trp /= num_tests;
-        tcp /= num_tests;
-        tbp /= num_tests;
+        ts /= num_tests / 1e6;
+        trp /= num_tests / 1e6;
+        tcp /= num_tests / 1e6;
+        tbp /= num_tests / 1e6;
 
-        fprintf(output, "| %d | %f | %f | %.1f | %f | %.1f | %f | %.1f |\n",
-                test, ts, trp, ts/trp, tcp, ts/tcp, tbp, ts/tbp);
+        fprintf(output, "| %d | %.0f | %.0f | %.0f | %.0f | %.1f | %.1f | %.1f |\n",
+                test, ts, trp, tcp, tbp, ts/trp, ts/tcp, ts/tbp);
     }
     
     fclose(output);

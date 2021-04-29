@@ -28,48 +28,71 @@ int main(int argc, const char * argv[])
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
     MPI_Comm_size(MPI_COMM_WORLD, &num_threads);
 
+    int num_tests = 10;
+    int test_from = 5000, test_to = 25000;
+    int test_step = 5000;
+
     if (!id)
     {
-        size_t len;
-        printf("enter array size: ");
-        fflush(stdout);
-        scanf("%zu", &len);
-        int *arr = rand_int_arr(len);
+        const char *out_file_name = "task2_res.txt";
 
-        int *arr_mm = malloc(len * sizeof(int));
-        memcpy(arr_mm, arr, len * sizeof(int));
+        FILE *output = fopen(out_file_name, "w");
+        fprintf(output,
+                "Время в мкс, количество потоков: %d\n"
+                "| Размер | Последовательный | Параллельный (однопоточный) | Параллельный (многопоточный) | Ускорение (однопоточный) | Ускорение (многопоточный) |\n"
+                "| --- | :---: | :---: | :---: | :---: | :---: |\n", num_threads);
 
-        int *arr_sm = malloc(len * sizeof(int));
-        memcpy(arr_sm, arr, len * sizeof(int));
+        for (int test = test_from; test <= test_to; test += test_step)
+        {
+            double ts = .0, tsmp = .0, tmmp = .0;
+            double time_point;
+
+            for (int i = 0; i < num_tests; ++i)
+            {
+                int *arr = rand_int_arr(test);
+
+                int *arr_mm = malloc(test * sizeof(int));
+                memcpy(arr_mm, arr, test * sizeof(int));
+
+                int *arr_sm = malloc(test * sizeof(int));
+                memcpy(arr_sm, arr, test * sizeof(int));
 
 
-        double stime;
-        stime = MPI_Wtime();
-        mergesort_seq(arr, len);
-        stime = MPI_Wtime() - stime;
+                time_point = MPI_Wtime();
+                mergesort_seq(arr, test);
+                ts += MPI_Wtime() - time_point;
 
-        double mmtime;
-        mmtime = MPI_Wtime();
-        mergesort_par_multimerge(arr_mm, len);
-        mmtime = MPI_Wtime() - mmtime;
+                time_point = MPI_Wtime();
+                mergesort_par_singlemerge(arr_sm, test);
+                tsmp += MPI_Wtime() - time_point;
 
-        double smtime;
-        smtime = MPI_Wtime();
-        mergesort_par_singlemerge(arr_sm, len);
-        smtime = MPI_Wtime() - smtime;
+                time_point = MPI_Wtime();
+                mergesort_par_multimerge(arr_mm, test);
+                tmmp += MPI_Wtime() - time_point;
 
-        printf("(s)  %fs %s\n", stime, is_sorted(arr, len) ? "sorted" : "BAD!");
-        printf("(mm) %fs %s\n", mmtime, is_sorted(arr_mm, len) ? "sorted" : "BAD!");
-        printf("(sm) %fs %s\n", smtime, is_sorted(arr_sm, len) ? "sorted" : "BAD!");
-        printf("speed-up(opt: %d) (mm) %f, %s; (sm) %f, %s;\n", num_threads,
-               stime/mmtime, arrays_are_equal(arr, arr_mm, len) ? "equal" : "DIF!",
-               stime/smtime, arrays_are_equal(arr, arr_sm, len) ? "equal" : "DIF!");
 
-        free(arr);
-        free(arr_mm);
+                free(arr);
+                free(arr_sm);
+                free(arr_mm);
+            }
+            ts /= num_tests / 1e6;
+            tsmp /= num_tests / 1e6;
+            tmmp /= num_tests / 1e6;
+
+            fprintf(output, "| %d | %.0f | %.0f | %.0f | %.2f | %.2f |\n",
+                    test, ts, tsmp, tmmp, ts/tsmp, ts/tmmp);
+        }
+
+        fclose(output);
     } else {
-        mergesort_par_multimerge(0, 0);
-        mergesort_par_singlemerge(0, 0);
+        for (int test = test_from; test <= test_to; test += test_step)
+        {
+            for (int i = 0; i < num_tests; ++i)
+            {
+                mergesort_par_singlemerge(0, 0);
+                mergesort_par_multimerge(0, 0);
+            }
+        }
     }
 
     MPI_Finalize();

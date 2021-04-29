@@ -3,7 +3,7 @@
 #include <string.h>
 #include <omp.h>
 
-static unsigned num_threads = 8;
+static unsigned num_threads = 4;
 
 void odd_even_sort(int *arr, size_t len);
 void odd_even_sort_p(int *arr, size_t len);
@@ -25,9 +25,10 @@ int main(int argc, const char * argv[])
 
 
     FILE *output = fopen(out_file_name, "w");
-    fprintf(output, 
+    fprintf(output,
+            "Время в мс, количество потоков: %d\n"
             "| Размер | Последовательный | Параллельный | Ускорение (8 потоков) |\n"
-            "| --- | :---: | :---: | :---: |\n");
+            "| :---: | :---: | :---: | :---: |\n", num_threads);
 
     for (int test = test_from; test <= test_to; test += test_step)
     {
@@ -52,11 +53,12 @@ int main(int argc, const char * argv[])
             free(a_p);
         }
         
-        ts /= num_tests;
-        tp /= num_tests;
+        ts /= num_tests / 1e3;
+        tp /= num_tests / 1e3;
         double speedup = ts / tp;
 
-        fprintf(output, "| %d | %f | %f | %f |\n", test, ts, tp, speedup);
+        fprintf(output, "| %d | %.0f | %.0f | %.1f |\n", 
+                test, ts, tp, speedup);
     }
     
     fclose(output);

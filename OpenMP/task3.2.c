@@ -4,9 +4,6 @@
 
 //xor-swap(a,b): a^b^b = a
 #define swap(a,b) a^=b;b^=a;a^=b
-
-unsigned num_threads = 8;
-
 #define numtype unsigned
 
 struct matrix
@@ -15,6 +12,88 @@ struct matrix
     unsigned n;
     unsigned m;
 };
+
+void free_matrix(struct matrix m);
+void matrix_transpose(struct matrix *m);
+void matrix_rand_init(struct matrix *m, unsigned rows, unsigned cols);
+struct matrix matrix_matrix_mult_prep(struct matrix m1, struct matrix m2t);
+void matrix_matrix_mult(struct matrix m1, struct matrix m2t, struct matrix res);
+void matrix_matrix_mult_sp(struct matrix m1, struct matrix m2t, struct matrix res);
+void matrix_matrix_mult_bp(struct matrix m1, struct matrix m2t, struct matrix res);
+char are_matrices_equal(struct matrix m1, struct matrix m2);
+
+unsigned num_threads = 8;
+
+int main(int argc, const char * argv[])
+{
+    /*
+     OpenMP task3.2:
+     compute matrix-matrix multiplication:
+        sp - striped parallel
+        bp - block parallel
+     */
+
+    int num_tests = 10;
+    int test_from = 50, test_to = 250;
+    int test_step = 50;
+    const char *out_file_name = "task3.2_res.txt";
+    
+    omp_set_num_threads(num_threads);
+
+    FILE *output = fopen(out_file_name, "w");
+    fprintf(output, 
+            "Время в мкс, количество потоков: %d\n"
+            "| Размер | Послед. | Пар. (ленты) | Пар. (блоки) | Ускор. (ленты) | Ускор. (блоки) |\n"
+            "| :---: | :---: | :---: | :---: | :---: | :---: |\n", num_threads);
+
+    for (int test = test_from; test <= test_to; test += test_step)
+    {
+        double ts = .0, tsp = .0, tbp = .0;
+        double time_point;
+
+        for (int i = 0; i < num_tests; ++i)
+        {
+            struct matrix m1, m2;
+            m1.n = m1.m = m2.m = test;
+            matrix_rand_init(&m1, m1.n, m1.m);
+            matrix_rand_init(&m2, m1.m, m2.m);
+
+            matrix_transpose(&m2);
+            struct matrix mult = matrix_matrix_mult_prep(m1, m2);
+            double t1, t2;
+
+
+            time_point = omp_get_wtime();
+            matrix_matrix_mult(m1, m2, mult);
+            ts += omp_get_wtime() - time_point;
+
+            time_point = omp_get_wtime();
+            matrix_matrix_mult_sp(m1, m2, mult);
+            tsp += omp_get_wtime() - time_point;
+
+            time_point = omp_get_wtime();
+            matrix_matrix_mult_bp(m1, m2, mult);
+            tbp += omp_get_wtime() - time_point;
+
+
+            free_matrix(m1);
+            free_matrix(m2);
+            free_matrix(mult);
+        }
+        
+        ts /= num_tests / 1e6;
+        tsp /= num_tests / 1e6;
+        tbp /= num_tests / 1e6;
+
+        fprintf(output, "| %d | %.0f | %.0f | %.0f | %.1f | %.1f |\n",
+                test, ts, tsp, tbp, ts/tsp, ts/tbp);
+    }
+    
+    fclose(output);
+
+    return 0;
+}
+
 
 void free_matrix(struct matrix m)
 {
@@ -205,64 +284,3 @@ char are_matrices_equal(struct matrix m1, struct matrix m2)
 
     return 1;
 }
-
-int main(int argc, const char * argv[])
-{
-    /*
-     OpenMP task3.2:
-     compute matrix-matrix multiplication:
-        sp - striped parallel
-        bp - block parallel
-     */
-
-    omp_set_num_threads(num_threads);
-
-    struct matrix m1, m2;
-    printf("enter sizes {n m l}: ");
-    scanf("%u%u%u", &m1.n, &m1.m, &m2.m);
-    matrix_rand_init(&m1, m1.n, m1.m);
-    matrix_rand_init(&m2, m1.m, m2.m);
-
-    matrix_transpose(&m2);
-    struct matrix true_mult = matrix_matrix_mult_prep(m1, m2);
-    struct matrix mult = matrix_matrix_mult_prep(m1, m2);
-    double t1, t2;
-
-
-    t1 = omp_get_wtime();
-    matrix_matrix_mult(m1, m2, true_mult);
-    t2 = omp_get_wtime();
-    double mult_time = t2 - t1;
-
-
-    t1 = omp_get_wtime();
-    matrix_matrix_mult_sp(m1, m2, mult);
-    t2 = omp_get_wtime();
-    double mult_time_sp = t2 - t1;
-    if (!are_matrices_equal(true_mult, mult)) {
-        mult_time_sp = -1.;
-    }
-
-    t1 = omp_get_wtime();
-    matrix_matrix_mult_bp(m1, m2, mult);
-    t2 = omp_get_wtime();
-    double mult_time_bp = t2 - t1;
-    if (!are_matrices_equal(true_mult, mult)) {
-        mult_time_bp = -1.;
-    }
-
-
-    free_matrix(m1);
-    free_matrix(m2);
-    free_matrix(true_mult);
-    free_matrix(mult);
-
-
-    printf("TIME - seq: %f, sp: %f, bp: %f\n",
-        mult_time, mult_time_sp, mult_time_bp);
-    printf("SPEED-UP (opt: %u) - sp: %f, bp: %f\n",
-            num_threads, mult_time/mult_time_sp, mult_time/mult_time_bp);
-
-    return 0;
-}
-
