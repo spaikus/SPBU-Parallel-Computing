@@ -3,17 +3,73 @@
 #include <string.h>
 #include <omp.h>
 
-static unsigned thread_num = 8;
+static unsigned num_threads = 8;
+
+void odd_even_sort(int *arr, size_t len);
+void odd_even_sort_p(int *arr, size_t len);
+int * rand_int_arr(size_t len);
+
+int main(int argc, const char * argv[])
+{
+    /*
+     OpenMP task5:
+     odd-even sort
+     */
+
+    int num_tests = 10;
+    int test_from = 4000, test_to = 20000;
+    int test_step = 4000;
+    const char *out_file_name = "task5_res.txt";
+    
+    omp_set_num_threads(num_threads);
+
+
+    FILE *output = fopen(out_file_name, "w");
+    fprintf(output, 
+            "| Размер | Последовательный | Параллельный | Ускорение (8 потоков) |\n"
+            "| --- | :---: | :---: | :---: |\n");
+
+    for (int test = test_from; test <= test_to; test += test_step)
+    {
+        double ts = .0, tp = .0;
+        double time_point;
+
+        for (int i = 0; i < num_tests; ++i)
+        {
+            int *a = rand_int_arr(test);
+            int *a_p = malloc(test * sizeof(int));
+            memcpy(a_p, a, test * sizeof(int));
+
+            time_point = omp_get_wtime();
+            odd_even_sort(a, test);
+            ts += omp_get_wtime() - time_point;
+
+            time_point = omp_get_wtime();
+            odd_even_sort_p(a_p, test);
+            tp += omp_get_wtime() - time_point;
+
+            free(a);
+            free(a_p);
+        }
+        
+        ts /= num_tests;
+        tp /= num_tests;
+        double speedup = ts / tp;
+
+        fprintf(output, "| %d | %f | %f | %f |\n", test, ts, tp, speedup);
+    }
+    
+    fclose(output);
+
+    return 0;
+}
 
 unsigned thread_id;
 size_t thread_arr_begin, thread_arr_end;
-int *thread_arr;
-#pragma omp threadprivate(thread_id, thread_arr_begin, thread_arr_end, thread_arr)
-
+#pragma omp threadprivate(thread_id, thread_arr_begin, thread_arr_end)
 
 //xor-swap
 #define swap(a,b) a^=b;b^=a;a^=b
-
 
 int * rand_int_arr(size_t len)
 {
@@ -69,7 +125,7 @@ void odd_even_sort_p(int *arr, size_t len)
     char has_changed = 2;
     char is_odd = 1;
 
-    size_t delta = (len + thread_num - 1) / thread_num;
+    size_t delta = (len + num_threads - 1) / num_threads;
     if (delta % 2) {
         ++delta;
     }
@@ -126,47 +182,5 @@ char is_sorted(int *arr, size_t len)
     }
 
     return 1;
-}
-
-int main(int argc, const char * argv[])
-{
-    /*
-     OpenMP task5:
-     odd-even sort
-     */
-
-   omp_set_num_threads(thread_num);
-
-    size_t len;
-    printf("enter size: ");
-    scanf("%zu", &len);
-
-    int *a = rand_int_arr(len);
-    int *a_p = malloc(len * sizeof(int));
-    memcpy(a_p, a, len * sizeof(int));
-
-    double t1, t2;
-
-    t1 = omp_get_wtime();
-    odd_even_sort(a, len);
-    t2 = omp_get_wtime();
-    double seq_time = t2 - t1;
-
-    t1 = omp_get_wtime();
-    odd_even_sort_p(a_p, len);
-    t2 = omp_get_wtime();
-    double par_time = t2 - t1;
-
-    printf("sequential: %s, %f sec\n", (is_sorted(a, len) ? "OK" : "BAD!"), seq_time);
-    printf("parallel: %s, %f sec\n", (is_sorted(a_p, len) ? "OK" : "BAD!"), par_time);
-    printf("SPEED-UP: %f\n", seq_time/par_time);
-
-    // print_array(a, len);
-    // print_array(a_pc, len);
-
-    free(a);
-    free(a_p);
-
-    return 0;
 }
 

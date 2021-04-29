@@ -4,7 +4,7 @@
 #include <limits.h>
 #include <omp.h>
 
-static unsigned thread_num = 8;
+static unsigned num_threads = 8;
 
 #define hashtype unsigned
 static const hashtype p = UCHAR_MAX + 1;
@@ -75,7 +75,7 @@ void find_substr_p(
                    )
 {
     hashtype subhash = hash_string((const unsigned char *)substr, sublen);
-    size_t delta = (indlen + thread_num - 1) / thread_num;
+    size_t delta = (indlen + num_threads - 1) / num_threads;
 
     #pragma omp parallel firstprivate(string, is_substr)
     {
@@ -129,7 +129,7 @@ int main(int argc, const char * argv[])
      find substring
      */
 
-    omp_set_num_threads(thread_num);
+    omp_set_num_threads(num_threads);
 
     size_t sublen, len;
     printf("enter lengths {substring string}: ");

@@ -8,6 +8,75 @@
 static int id;
 static int num_threads;
 
+int * rand_int_arr(size_t len);
+void mergesort_seq(int *arr, size_t len);
+void mergesort_par_multimerge(int *arr, size_t len);
+void mergesort_par_singlemerge(int *arr, size_t len);
+char is_sorted(int *arr, size_t len);
+char arrays_are_equal(int *arr1, int *arr2, size_t len);
+
+
+int main(int argc, const char * argv[])
+{
+    /*
+     MPI task2
+     merge sort
+     */
+
+    MPI_Init(&argc, &argv);
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &id);
+    MPI_Comm_size(MPI_COMM_WORLD, &num_threads);
+
+    if (!id)
+    {
+        size_t len;
+        printf("enter array size: ");
+        fflush(stdout);
+        scanf("%zu", &len);
+        int *arr = rand_int_arr(len);
+
+        int *arr_mm = malloc(len * sizeof(int));
+        memcpy(arr_mm, arr, len * sizeof(int));
+
+        int *arr_sm = malloc(len * sizeof(int));
+        memcpy(arr_sm, arr, len * sizeof(int));
+
+
+        double stime;
+        stime = MPI_Wtime();
+        mergesort_seq(arr, len);
+        stime = MPI_Wtime() - stime;
+
+        double mmtime;
+        mmtime = MPI_Wtime();
+        mergesort_par_multimerge(arr_mm, len);
+        mmtime = MPI_Wtime() - mmtime;
+
+        double smtime;
+        smtime = MPI_Wtime();
+        mergesort_par_singlemerge(arr_sm, len);
+        smtime = MPI_Wtime() - smtime;
+
+        printf("(s)  %fs %s\n", stime, is_sorted(arr, len) ? "sorted" : "BAD!");
+        printf("(mm) %fs %s\n", mmtime, is_sorted(arr_mm, len) ? "sorted" : "BAD!");
+        printf("(sm) %fs %s\n", smtime, is_sorted(arr_sm, len) ? "sorted" : "BAD!");
+        printf("speed-up(opt: %d) (mm) %f, %s; (sm) %f, %s;\n", num_threads,
+               stime/mmtime, arrays_are_equal(arr, arr_mm, len) ? "equal" : "DIF!",
+               stime/smtime, arrays_are_equal(arr, arr_sm, len) ? "equal" : "DIF!");
+
+        free(arr);
+        free(arr_mm);
+    } else {
+        mergesort_par_multimerge(0, 0);
+        mergesort_par_singlemerge(0, 0);
+    }
+
+    MPI_Finalize();
+    return 0;
+}
+
+
 void pntswap(void **a, void **b)
 {
     void *tmp = *a;
@@ -36,6 +105,7 @@ void print_array(const int *arr, size_t len)
     printf("\n");
 }
 
+
 void merge(const int *arr, int *cpy, size_t le, size_t re)
 {
     size_t i = 0;
@@ -62,11 +132,10 @@ void merge(const int *arr, int *cpy, size_t le, size_t re)
     }
 }
 
-void mergesort_seq(int *arr, size_t len)
+void mergesort_(int *arr, int *cpy, size_t len, size_t blocklen)
 {
-    int *cpy = malloc(len * sizeof(int));
     char is_swapped = 0;
-    for (size_t blocklen = 1, doublelen = 2; blocklen < len; blocklen = doublelen, doublelen <<= 1)
+    for (size_t doublelen = blocklen << 1; blocklen < len; blocklen = doublelen, doublelen <<= 1)
     {
         for (size_t i = 0; i < len; i += doublelen)
         {
@@ -93,6 +162,13 @@ void mergesort_seq(int *arr, size_t len)
     }
 }
 
+void mergesort_seq(int *arr, size_t len)
+{
+    int *cpy = malloc(len * sizeof(int));
+    mergesort_(arr, cpy, len, 1);
+    free(cpy);
+}
+
 
 int num_sections()
 {
@@ -107,117 +183,95 @@ int num_sections()
     return num;
 }
 
-void mergesort_par(int *arr, size_t len)
+void mergesort_par_prep(int **arr, size_t *len, int **cpy,
+                        int *sendcounts, int *displs)
+{
+    int delta = (*len + num_threads - 1) / num_threads;
+
+    sendcounts[0] = delta;
+    displs[0] = 0;
+
+    for (int i = 1; i < num_threads; ++i) {
+        sendcounts[i] = delta;
+        displs[i] = displs[i-1] + delta;
+    }
+    sendcounts[num_threads-1] = *len - delta * (num_threads-1);
+
+    if (id) {
+        *len = sendcounts[id];
+        *arr = malloc(*len * num_sections() * sizeof(int));
+        *cpy = malloc(*len * num_sections() * sizeof(int));
+    } else {
+        *cpy = malloc((*len) * sizeof(int));
+        *len = *sendcounts;
+    }
+
+    MPI_Scatterv(*arr, sendcounts, displs,
+                 MPI_INT, *arr, *sendcounts,
+                 MPI_INT, 0, MPI_COMM_WORLD);
+}
+
+void mergesort_par_multimerge(int *arr, size_t len)
 {
     MPI_Bcast(&len, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
-    if (!len) {
+    if (len < num_threads) {
+        if (!id) {
+            mergesort_seq(arr, len);
+        }
         return;
     }
 
     int *cpy;
-    char is_swapped = 0;
     int *sendcounts = malloc(num_threads * sizeof(int));
-    int last_section;
+    int *displs = malloc(num_threads * sizeof(int));
+    int last_section = num_threads - 1;
 
+    mergesort_par_prep(&arr, &len, &cpy, sendcounts, displs);
+
+    char is_swapped = 0;
+
+    mergesort_(arr, cpy, len, 1);
+
+    int power2 = 1;
+    int section = id;
+
+    while (is_even(section) && section < last_section)
     {
-        int *displs = malloc(num_threads * sizeof(int));
-        int delta = (len + num_threads - 1) / num_threads;
-        int i = 0;
+        int from = id + power2;
+        int fromfrom = from + power2;
 
-        sendcounts[i] = delta;
-        displs[i] = 0;
-        ++i; len -= delta;
-
-        while (delta < len) {
-            sendcounts[i] = delta;
-            displs[i] = displs[i-1] + delta;
-            ++i; len -= delta;
-        }
-        if (len) {
-            sendcounts[i] = len;
-            displs[i] = displs[i-1] + delta;
-            ++i;
-        }
-        last_section = i - 1;
-
-        if (id && id < i)
-        {
-            len = sendcounts[id];
-            arr = malloc(len * num_sections() * sizeof(int));
-            if (is_even(id)) {
-                cpy = malloc(len * num_sections() * sizeof(int));
-            }
-        }
-        else if(id)
-        {
-            len = 0;
-            arr = malloc(sizeof(int));
-        }
-        else
-        {
-            cpy = malloc((displs[i-1] + len) * sizeof(int));
-            len = *sendcounts;
+        MPI_Status status;
+        int meslen;
+        if (num_threads <= fromfrom) {
+            meslen = displs[num_threads - 1] + sendcounts[num_threads - 1] - displs[from];
+        } else {
+            meslen = displs[fromfrom] - displs[from];
         }
 
-        while (i < num_threads) {
-            sendcounts[i] = 1;
-            displs[i] = 0;
-            ++i;
-        }
+        MPI_Recv(arr + len, meslen, MPI_INT, from, id, MPI_COMM_WORLD, &status);
 
-        MPI_Scatterv(arr, sendcounts, displs,
-                     MPI_INT, arr, *sendcounts,
-                     MPI_INT, 0, MPI_COMM_WORLD);
+        merge(arr, cpy, len, len + meslen);
+        pntswap(&arr, &cpy);
+        is_swapped = !is_swapped;
+        len += meslen;
 
-        free(displs);
+        power2 <<= 1;
+        section >>= 1;
+        last_section >>= 1;
     }
 
-    if (len)
+    if (id)
     {
-        mergesort_seq(arr, len);
-
-        int power2 = 1;
-        int section = id;
-
-        while (is_even(section) && section < last_section)
-        {
-            int from = id + power2;
-
-            if (sendcounts[from])
-            {
-                MPI_Status status;
-                MPI_Probe(from, id, MPI_COMM_WORLD, &status);
-
-                int meslen;
-                MPI_Get_count(&status, MPI_INT, &meslen);
-                MPI_Recv(arr + len, meslen, MPI_INT, from, id, MPI_COMM_WORLD, &status);
-
-                merge(arr, cpy, len, len + meslen);
-                pntswap(&arr, &cpy);
-                is_swapped = !is_swapped;
-                len += meslen;
-            }
-
+        while (is_even(section)) {
             power2 <<= 1;
             section >>= 1;
-            last_section >>= 1;
         }
 
-        if (id)
-        {
-            while (is_even(section)) {
-                power2 <<= 1;
-                section >>= 1;
-            }
-
-            int to = id - power2;
-            MPI_Send(arr, len, MPI_INT, to, to, MPI_COMM_WORLD);
-        }
-
+        int to = id - power2;
+        MPI_Send(arr, len, MPI_INT, to, to, MPI_COMM_WORLD);
     }
 
 
-    free(sendcounts);
     if (id) {
         free(arr);
     }
@@ -232,10 +286,59 @@ void mergesort_par(int *arr, size_t len)
         }
     }
 
-    if (is_even(id) && len) {
-        free(cpy);
-    }
+    free(sendcounts);
+    free(displs);
+    free(cpy);
 }
+
+void mergesort_par_singlemerge(int *arr, size_t len)
+{
+    MPI_Bcast(&len, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+
+    if (len < num_threads) {
+        if (!id) {
+            mergesort_seq(arr, len);
+        }
+        return;
+    }
+
+    int *cpy;
+    int *sendcounts = malloc(num_threads * sizeof(int));
+    int *displs = malloc(num_threads * sizeof(int));
+    int last_section = num_threads - 1;
+
+    mergesort_par_prep(&arr, &len, &cpy, sendcounts, displs);
+
+    mergesort_(arr, cpy, len, 1);
+
+    if (!id) {
+        int from = num_threads - 1;
+        MPI_Status status;
+        MPI_Recv(arr + displs[from], sendcounts[from], MPI_INT, from, id, MPI_COMM_WORLD, &status);
+    } else if (id == num_threads - 1) {
+        MPI_Send(arr, sendcounts[id], MPI_INT, 0, 0, MPI_COMM_WORLD);
+    }
+
+    len = sendcounts[num_threads-1] + displs[num_threads-1];
+
+    sendcounts[num_threads-1] = 0;
+    if (id != num_threads - 1) {
+        MPI_Gatherv(arr, *sendcounts, MPI_INT, arr, sendcounts, displs, MPI_INT, 0, MPI_COMM_WORLD);
+    }
+
+    if (!id) {
+        mergesort_(arr, cpy, len, *sendcounts);
+    }
+
+    if (id) {
+        free(arr);
+    }
+
+    free(sendcounts);
+    free(displs);
+    free(cpy);
+}
+
 
 char is_sorted(int *arr, size_t len)
 {
@@ -262,49 +365,3 @@ char arrays_are_equal(int *arr1, int *arr2, size_t len)
 
     return 1;
 }
-
-int main(int argc, const char * argv[])
-{
-    /*
-     MPI task2
-     merge sort
-     */
-
-    MPI_Init(&argc, &argv);
-
-    MPI_Comm_rank(MPI_COMM_WORLD, &id);
-    MPI_Comm_size(MPI_COMM_WORLD, &num_threads);
-
-    if (!id)
-    {
-        size_t len = 150000;
-        int *arr = rand_int_arr(len);
-
-        int *arrp = malloc(len * sizeof(int));
-        memcpy(arrp, arr, len * sizeof(int));
-
-        double stime;
-        stime = MPI_Wtime();
-        mergesort_seq(arr, len);
-        stime = MPI_Wtime() - stime;
-
-        double ptime;
-        ptime = MPI_Wtime();
-        mergesort_par(arrp, len);
-        ptime = MPI_Wtime() - ptime;
-
-
-        printf("(s) %fs %s\n", stime, is_sorted(arr, len) ? "sorted" : "BAD!");
-        printf("(p) %fs %s\n", ptime, is_sorted(arrp, len) ? "sorted" : "BAD!");
-        printf("speed-up %f, %s\n", stime/ptime, arrays_are_equal(arr, arrp, len) ? "equal" : "DIF!");
-
-        free(arr);
-        free(arrp);
-    } else {
-        mergesort_par(0, 0);
-    }
-
-    MPI_Finalize();
-    return 0;
-}
-

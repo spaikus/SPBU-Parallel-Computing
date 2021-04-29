@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <mpi.h>
 
+#define is_master(id) !id
+
 static int id;
 static int num_threads;
 
@@ -57,7 +59,7 @@ void tran_mes(int from, int to)
 
 void roundabout(void)
 {
-    if (!id) {
+    if (is_master(id)) {
         printf("starting ring message exchange...\n\n");
     }
 
@@ -66,25 +68,26 @@ void roundabout(void)
         printf("process[%d/%d]: I am here alone, no process to send a message\n",
                id, num_threads);
     }
-    else if (id)
-    {
-        tran_mes(id - 1, id + 1 == num_threads ? 0 : id + 1);
-    }
-    else
+    else if (is_master(id))
     {
         send_mes(1);
         recv_mes(num_threads - 1);
     }
+    else
+    {
+        tran_mes(id - 1, id + 1 == num_threads ? 0 : id + 1);
+    }
+    
 
     MPI_Barrier(MPI_COMM_WORLD);
-    if (!id) {
+    if (is_master(id)) {
         printf("ring message exchange is over\n\n");
     }
 }
 
 void master_slave(void)
 {
-    if (!id) {
+    if (is_master(id)) {
         printf("starting master-slave message exchange...\n\n");
     }
 
@@ -93,27 +96,27 @@ void master_slave(void)
         printf("process[%d/%d]: I am here alone, no process to send a message\n",
                id, num_threads);
     }
-    else if (id)
-    {
-        tran_mes(0, 0);
-    }
-    else
+    else if (is_master(id))
     {
         for (int process = 1; process < num_threads; ++process) {
             send_mes(process);
             recv_mes(process);
         }
     }
+    else
+    {
+        tran_mes(0, 0);
+    }
 
     MPI_Barrier(MPI_COMM_WORLD);
-    if (!id) {
+    if (is_master(id)) {
         printf("master-slave message exchange is over\n\n");
     }
 }
 
 void each_to_each(void)
 {
-    if (!id) {
+    if (is_master(id)) {
         printf("starting everyone to everyone message exchange...\n\n");
     }
 
@@ -134,7 +137,7 @@ void each_to_each(void)
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
-    if (!id) {
+    if (is_master(id)) {
         printf("everyone to everyone message exchange is over\n\n");
     }
 }

@@ -5,7 +5,7 @@
 //xor-swap(a,b): a^b^b = a
 #define swap(a,b) a^=b;b^=a;a^=b
 
-unsigned thread_num = 8;
+unsigned num_threads = 8;
 
 #define numtype unsigned
 
@@ -126,11 +126,11 @@ void matrix_matrix_mult_sp(struct matrix m1, struct matrix m2t, struct matrix re
 
 void matrix_matrix_mult_bp(struct matrix m1, struct matrix m2t, struct matrix res)
 {
-    unsigned rowlen = m1.n / thread_num;
+    unsigned rowlen = m1.n / num_threads;
     if (!rowlen) { rowlen = 1; }
-    unsigned midlen = m1.m / thread_num;
+    unsigned midlen = m1.m / num_threads;
     if (!midlen) { midlen = 1; }
-    unsigned collen = m2t.n / thread_num;
+    unsigned collen = m2t.n / num_threads;
     if (!collen) { collen = 1; }
     unsigned rows = (m1.n + rowlen - 1) / rowlen;
     unsigned mids = (m1.m + midlen - 1) / midlen;
@@ -215,7 +215,7 @@ int main(int argc, const char * argv[])
         bp - block parallel
      */
 
-    omp_set_num_threads(thread_num);
+    omp_set_num_threads(num_threads);
 
     struct matrix m1, m2;
     printf("enter sizes {n m l}: ");
@@ -261,7 +261,7 @@ int main(int argc, const char * argv[])
     printf("TIME - seq: %f, sp: %f, bp: %f\n",
         mult_time, mult_time_sp, mult_time_bp);
     printf("SPEED-UP (opt: %u) - sp: %f, bp: %f\n",
-            thread_num, mult_time/mult_time_sp, mult_time/mult_time_bp);
+            num_threads, mult_time/mult_time_sp, mult_time/mult_time_bp);
 
     return 0;
 }
