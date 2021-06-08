@@ -22,10 +22,11 @@
 
 __host__ void add(int *a, int *b, int *c)
 {
-    int tid = 0;    // this is CPU zero, so we start at zero
-    while (tid < THREADS) {
-        c[tid] = a[tid] + b[tid];
-        tid += 1;   // we have one CPU, so we increment by one
+    int id = 0;
+    while (id < THREADS)
+    {
+        c[id] = a[id] + b[id];
+        id += 1;
     }
 }
 
